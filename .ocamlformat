@@ -1,0 +1,2 @@
+let-binding-spacing = double-semicolon
+break-separators = before

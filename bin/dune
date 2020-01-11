@@ -1,0 +1,5 @@
+(executable
+ (name ocaml_ssh_test)
+ (libraries core async ocaml_ssh)
+ (preprocess (pps ppx_jane ppx_expect))
+  )
