@@ -19,6 +19,8 @@ let uint32 = Iobuf.Consume.uint32_be
 
 let uint64 = Iobuf.Consume.uint64_be_exn
 
+let message_id t = uint8 t |> Message_id.of_code
+
 let string t =
   let len = uint32 t in
   bytes t ~len

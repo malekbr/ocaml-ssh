@@ -17,6 +17,8 @@ val uint32 : t -> int
 
 val uint64 : t -> int
 
+val message_id : t -> Message_id.t
+
 val string : t -> string
 
 val name_list : t -> string list

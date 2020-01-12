@@ -14,6 +14,8 @@ val uint32 : t -> int -> unit
 
 val uint64 : t -> int -> unit
 
+val message_id : t -> Message_id.t -> unit
+
 val string : t -> string -> unit
 
 val bytes : t -> string -> unit

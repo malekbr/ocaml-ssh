@@ -1,6 +1,6 @@
 (library
  (name ocaml_ssh)
- (libraries core async x509 nocrypto zarith stdint)
+ (libraries core async x509 nocrypto zarith stdint cryptokit hex)
  (inline_tests)
  (preprocess (pps ppx_jane ppx_expect))
   )

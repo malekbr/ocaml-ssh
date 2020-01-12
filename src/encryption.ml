@@ -23,10 +23,10 @@ module Method = struct
     State (M.create ~initialization_vector ~key, t)
   ;;
 
-  module Aes128_crt = struct
+  module Aes128_ctr = struct
     type t
 
-    let name = "aes128-crt"
+    let name = "aes128-ctr"
 
     let block_size = 16
 
@@ -37,7 +37,7 @@ module Method = struct
     let create ~initialization_vector:_ ~key:_ = assert false
   end
 
-  let aes128_crt : t = T (module Aes128_crt)
+  let aes128_ctr : t = T (module Aes128_ctr)
 
   let none : t =
     T
@@ -57,7 +57,7 @@ module Method = struct
       end )
   ;;
 
-  let all = [ aes128_crt ]
+  let all = [ aes128_ctr ]
 end
 
 let encrypt (State (t, (module M))) = M.encrypt t

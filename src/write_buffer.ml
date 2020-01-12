@@ -23,6 +23,8 @@ let string t str =
 
 let bytes t str = Iobuf.Fill.stringo t str
 
+let message_id t code = Message_id.to_code code |> uint8 t
+
 let mpint_str z =
   if Z.equal z Z.zero then ""
   else

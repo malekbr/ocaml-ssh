@@ -30,7 +30,10 @@ let set_mac t compression = t.compression <- compression
 
 let packet_buffer = Write_buffer.create ()
 
-let padding_size size ~block_size = -size % block_size
+let padding_size size ~block_size =
+  let padding = -size % block_size in
+  if padding < 4 then padding + block_size else padding
+;;
 
 let generate_padding padding_size =
   Nocrypto.Rng.generate padding_size |> Cstruct.to_string
@@ -51,6 +54,7 @@ let generate_message
   t.sequence_number <- Uint32.succ sequence_number;
   (* Compute the padding *)
   let length = String.length message in
+  print_s [%message (length : int)];
   (* length + uint8 for padding size *)
   let total_length_not_padded = length + 1 in
   (* total_length_not_padded + uint32 for unpadded size *)
@@ -61,6 +65,7 @@ let generate_message
   in
   (* Encrypt the message *)
   Write_buffer.uint32 packet_buffer (total_length_not_padded + padding_size);
+  Write_buffer.uint8 packet_buffer padding_size;
   Write_buffer.bytes packet_buffer message;
   Write_buffer.bytes packet_buffer (generate_padding padding_size);
   let message =

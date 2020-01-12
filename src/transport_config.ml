@@ -1,7 +1,7 @@
 open! Core
 
 type t = {
-    kex : Kex.t list
+    kex : Kex.Method.t list
   ; public_keys : Public_key_algorithm.t list
   ; encryption : Encryption.Method.t list
   ; mac : Mac.Method.t list
@@ -10,7 +10,7 @@ type t = {
 
 let default =
   {
-    kex = Kex.all
+    kex = Kex.Method.all
   ; public_keys = Public_key_algorithm.all
   ; encryption = Encryption.Method.all
   ; mac = Mac.Method.all
@@ -22,7 +22,7 @@ let write t packet_message =
   Write_buffer.uint8 packet_message 20;
   Nocrypto.Rng.generate 16 |> Cstruct.to_string
   |> Write_buffer.bytes packet_message;
-  let kex = List.map t.kex ~f:Kex.name in
+  let kex = List.map t.kex ~f:Kex.Method.name in
   let public_keys = List.map t.public_keys ~f:Public_key_algorithm.name in
   let encryption = List.map t.encryption ~f:Encryption.Method.name in
   let mac = List.map t.mac ~f:Mac.Method.name in
@@ -81,6 +81,15 @@ module Received = struct
       ; first_kex_follows
       }
     in
-    print_s [%message (t : t)]
+    print_s [%message (t : t)];
+    t
   ;;
 end
+
+let chosen_kex t (received : Received.t) =
+  print_endline "choosing kex";
+  List.find t.kex ~f:(fun kex ->
+      List.exists received.kex ~f:(fun server_kex ->
+          String.equal (Kex.Method.name kex) server_kex))
+  |> Option.map ~f:Kex.Method.create
+;;
