@@ -63,5 +63,5 @@ let request_auth { state; _ } =
 ;;
 
 let request_userauth_list ~username { state; _ } =
-  State.send state (User_auth.request_none ~username)
+  State.request_auth state (User_auth.request_none ~username)
 ;;

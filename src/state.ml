@@ -24,6 +24,7 @@ type t = {
   ; on_connection_established : unit -> unit
   ; transport_config : Transport_config.t
   ; service_response_queue : Service_request.Response_queue.t
+  ; user_auth : User_auth.t
 }
 
 let send t f =
@@ -48,6 +49,7 @@ let create transport_config send_message update_packet_writer
   ; server_identification
   ; transport_config
   ; service_response_queue = Service_request.Response_queue.create ()
+  ; user_auth = User_auth.create ()
   }
 ;;
 
@@ -172,6 +174,7 @@ let handle_message ~payload t read_buffer =
       handle_key_exchange t read_buffer message_type
   | Service_accept ->
       Service_request.respond t.service_response_queue read_buffer
+  | Userauth_failure -> User_auth.register_denied t.user_auth read_buffer
   | _ ->
       raise_s
         [%message "Unimplemented message type" (message_type : Message_id.t)]
@@ -180,3 +183,5 @@ let handle_message ~payload t read_buffer =
 let request_service t ~service_name =
   send t (Service_request.request t.service_response_queue ~service_name)
 ;;
+
+let request_auth t auth = send t (auth t.user_auth)

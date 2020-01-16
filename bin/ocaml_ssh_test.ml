@@ -12,7 +12,10 @@ let test ~where ~username =
   in
   let%bind connection = Ocaml_ssh.Transport.create ~where_to_connect in
   let%bind () = Ocaml_ssh.Transport.request_auth connection in
-  Ocaml_ssh.Transport.request_userauth_list connection ~username;
+  let%bind result =
+    Ocaml_ssh.Transport.request_userauth_list connection ~username
+  in
+  print_s [%message (result : Ocaml_ssh.User_auth.Auth_response.t)];
   Ocaml_ssh.Transport.closed connection
 ;;
 
