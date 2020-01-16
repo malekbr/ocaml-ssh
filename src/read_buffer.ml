@@ -21,6 +21,8 @@ let uint64 = Iobuf.Consume.uint64_be_exn
 
 let message_id t = uint8 t |> Message_id.of_code
 
+let peek t = Iobuf.Peek.stringo t ~pos:0
+
 let string t =
   let len = uint32 t in
   bytes t ~len

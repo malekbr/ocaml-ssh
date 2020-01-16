@@ -29,6 +29,8 @@ val consume_to_string : t -> string
 
 val read_buffer : t -> Read_buffer.t
 
+val peek : t -> string
+
 val reset : t -> unit
 
 val wrote : t -> int

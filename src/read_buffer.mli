@@ -19,6 +19,8 @@ val uint64 : t -> int
 
 val message_id : t -> Message_id.t
 
+val peek : t -> string
+
 val string : t -> string
 
 val name_list : t -> string list

@@ -93,6 +93,16 @@ let consume_to_string t =
   result
 ;;
 
+let peek t =
+  let lo = Iobuf.Lo_bound.window t in
+  let hi = Iobuf.Hi_bound.window t in
+  Iobuf.flip_lo t;
+  let result = Iobuf.to_string t in
+  Iobuf.Lo_bound.restore lo t;
+  Iobuf.Hi_bound.restore hi t;
+  result
+;;
+
 let wrote t = Iobuf.Expert.lo t - Iobuf.Expert.lo_min t
 
 let reset t = Iobuf.reset t

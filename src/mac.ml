@@ -11,6 +11,8 @@ module type S = sig
 
   val signature_length : int
 
+  val key_length : int
+
   val create : key:string -> t
 end
 
@@ -22,6 +24,8 @@ module Method = struct
   let name (T (module M)) = M.name
 
   let create (T ((module M) as t)) ~key = State (M.create ~key, t)
+
+  let key_length (T (module M)) = M.key_length
 
   let none : t =
     T
@@ -36,25 +40,53 @@ module Method = struct
 
         let signature_length = 0
 
+        let key_length = 0
+
         let create ~key:_ = ()
       end )
   ;;
 
   module Hmac_sha1 = struct
-    type t
+    type t = string -> string
 
     let name = "hmac-sha1"
 
-    let signature _ _ = assert false
+    let signature t = t
 
-    let verify _ ~message:_ ~signature:_ = assert false
+    let verify t ~message ~signature = t message |> String.equal signature
 
     let signature_length = 20
 
-    let create ~key:_ = assert false
+    let key_length = 20
+
+    let create ~key =
+      let hash = Nocrypto.Hash.mac `SHA1 ~key:(Cstruct.of_string key) in
+      fun input -> Cstruct.of_string input |> hash |> Cstruct.to_string
+    ;;
   end
 
   let hmac_sha1 : t = T (module Hmac_sha1)
+
+  module Hmac_md5 = struct
+    type t = string -> string
+
+    let name = "hmac-md5"
+
+    let signature t = t
+
+    let verify t ~message ~signature = t message |> String.equal signature
+
+    let signature_length = 16
+
+    let key_length = 16
+
+    let create ~key =
+      let hash = Nocrypto.Hash.mac `MD5 ~key:(Cstruct.of_string key) in
+      fun input -> Cstruct.of_string input |> hash |> Cstruct.to_string
+    ;;
+  end
+
+  let hmac_md5 : t = T (module Hmac_md5)
 
   let all = [ hmac_sha1 ]
 end
