@@ -97,25 +97,6 @@ module Method = struct
     let create_encrypt = T.create
 
     let create_decrypt = T.create
-
-    let%expect_test "round trip" =
-      let initialization_vector =
-        "\xf0\xe4\xb7\x21\x1b\xf1\x03\x27\xb7\x69\x21\xa1\x7e\x77\x8d\xb5"
-      in
-      let key =
-        "\x34\x51\xa8\x5f\xd7\x02\x5b\xfc\x88\xac\x7e\x66\x59\x54\xa1\x3b"
-      in
-
-      let in1 =
-        "\x33\xbc\xed\x53\x13\x7f\xbb\xff\x8d\xb3\x36\xdd\x19\x5b\x79\xc8"
-      in
-      let in2 =
-        "\x41\xc9\x20\xba\x59\xc4\x77\xa9\x44\x25\x55\x86\x59\x16\x30\xbb"
-      in
-      let d = create_decrypt ~initialization_vector ~key in
-      decrypt d in1 |> String.Hexdump.sexp_of_t |> print_s;
-      decrypt d in2 |> String.Hexdump.sexp_of_t |> print_s
-    ;;
   end
 
   let aes128_ctr : t = T (module Aes128_ctr)

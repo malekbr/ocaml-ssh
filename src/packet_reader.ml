@@ -74,11 +74,9 @@ let rec process_block t ~f =
   match t.state with
   | Building_decryption { size = None; full_decrypted } ->
       let size = Read_buffer.uint32 t.read_buffer in
-      print_s [%message "Building decryption" (size : int)];
       t.state <- Building_decryption { size = Some size; full_decrypted };
       process_block t ~f
   | Building_decryption { size = Some size; full_decrypted } ->
-      print_s [%message "Building decryption" (size : int)];
       if available_in_work_buffer t >= size (* should be just size *) then (
         let padding_length = Read_buffer.uint8 t.read_buffer in
         let padding_length_length = 1 in
@@ -92,8 +90,6 @@ let rec process_block t ~f =
         in
         t.state <- Waiting_for_mac { compressed_message; decrypted_payload } )
   | Waiting_for_mac { compressed_message; decrypted_payload } ->
-      print_s [%message (decrypted_payload : String.Hexdump.t)];
-      print_s [%message "Waiting for mac"];
       let payload = compressed_message in
       let signature = Write_buffer.consume_to_string t.work_buffer in
       let message =
@@ -118,7 +114,6 @@ let write_block t block =
     ( match t.state with
     | Building_decryption _ ->
         let decrypted = Encryption.decrypt t.encryption block in
-        print_s [%message (decrypted : String.Hexdump.t)];
         decrypted
     | Waiting_for_mac _ -> block )
 ;;
@@ -129,7 +124,6 @@ let process_string t string ~f =
     match request_next_block t with
     | None -> ()
     | Some block ->
-        print_s [%message (block : String.Hexdump.t)];
         write_block t block;
         process_block t ~f;
         loop ()

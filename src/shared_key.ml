@@ -24,7 +24,6 @@ let compute middle kex (kex_result : Kex.Kex_result.t) ~scratch_pad ~session_id
     |> Kex.hash kex
     |> compute_until kex ~scratch_pad ~size ~key ~hash
   in
-  print_s [%message (hash : String.Hexdump.t) (middle : char)];
   hash
 ;;
 

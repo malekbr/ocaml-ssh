@@ -11,12 +11,15 @@ let message = sprintf "SSH-%s-%s nocomment\r\n" ssh_version implementation
 
 type t = { state : State.t; closed : unit Deferred.t } [@@deriving fields]
 
+let debug_raw = false
+
 let create ~where_to_connect =
   let%bind () = Init_rng.reseed () in
   let%bind _socket, reader, writer = Tcp.connect where_to_connect in
   let send s =
-    printf "sending %d bytes\n" (String.length s);
-    String.Hexdump.to_string_hum s |> print_endline;
+    if debug_raw then (
+      printf "sending %d bytes\n" (String.length s);
+      String.Hexdump.to_string_hum s |> print_endline );
     Writer.write writer s
   in
   send message;
@@ -40,13 +43,13 @@ let create ~where_to_connect =
       ~on_connection_established:(Ivar.fill connection_established)
       ~server_identification
   in
-  print_s [%sexp (server_identification : string)];
   (* TODO malekbr: Implement host verification *)
   let closed =
     Reader.pipe reader
     |> Pipe.iter_without_pushback ~f:(fun s ->
-           printf "received %d bytes\n" (String.length s);
-           String.Hexdump.to_string_hum s |> print_endline;
+           if debug_raw then (
+             printf "received %d bytes\n" (String.length s);
+             String.Hexdump.to_string_hum s |> print_endline );
            Packet_reader.process_string packet_reader s
              ~f:(fun ~sequence_number ~payload ->
              function
@@ -62,6 +65,12 @@ let request_auth { state; _ } =
   State.request_service state ~service_name:User_auth.service_name
 ;;
 
-let request_userauth_list ~username { state; _ } =
+let request_auth_none ~username { state; _ } =
   State.request_auth state (User_auth.request_none ~username)
 ;;
+
+let request_password ~username ~password { state; _ } =
+  State.request_auth state (User_auth.request_password ~username ~password)
+;;
+
+let request_channel { state; _ } = Channel.create state

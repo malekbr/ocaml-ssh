@@ -1,4 +1,5 @@
 open! Core
+open! Async
 
 type state =
   | Sending_transport_config of { cookie : string }
@@ -13,6 +14,86 @@ type state =
     }
   | No_key_exchange
 
+module Channel_distributor = struct
+  module State = struct
+    type t =
+      | Creating of
+          ( Channel_request.Confirmation.t
+          * Channel_request.Server_message.t Pipe.Reader.t )
+          Ivar.t
+      | Created of Channel_request.Server_message.t Pipe.Writer.t
+
+    let write_pipe = function Created writer -> writer | _ -> assert false
+  end
+
+  type t = State.t Int.Table.t
+
+  let create () = Int.Table.create ()
+
+  let create_channel (t : t) id =
+    let result = Ivar.create () in
+    Hashtbl.add_exn t ~key:id ~data:(Creating result);
+    Ivar.read result
+  ;;
+
+  let confirm_created (t : t) read_buffer =
+    let id, confirmation = Channel_request.handle_confirmation read_buffer in
+    Hashtbl.update t id ~f:(function
+      | None -> raise_s [%message "Unknown channel id" (id : int)]
+      | Some (Created _) -> raise_s [%message "Channel confirmed twice"]
+      | Some (Creating ivar) ->
+          let reader, writer = Pipe.create () in
+          Ivar.fill ivar (confirmation, reader);
+          Created writer)
+  ;;
+
+  let close t id =
+    Hashtbl.change t id
+      ~f:
+        (Option.bind ~f:(function
+          | State.Created writer ->
+              Pipe.close writer;
+              None
+          | Creating _ -> assert false))
+  ;;
+
+  let handle_window_adjust (t : t) read_buffer =
+    let id, message = Channel_request.handle_window_adjust read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_success (t : t) read_buffer =
+    let id, message = Channel_request.handle_window_success read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_close (t : t) read_buffer =
+    let id, message = Channel_request.handle_close read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_eof (t : t) read_buffer =
+    let id, message = Channel_request.handle_eof read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_data (t : t) read_buffer =
+    let id, message = Channel_request.handle_data read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_request (t : t) read_buffer =
+    let id, message = Channel_request.handle_request read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+end
+
 type t = {
     mutable state : state
   ; send_message : (Write_buffer.t -> unit) -> unit
@@ -25,6 +106,8 @@ type t = {
   ; transport_config : Transport_config.t
   ; service_response_queue : Service_request.Response_queue.t
   ; user_auth : User_auth.t
+  ; channel_id_generator : Channel_request.Id_generator.t
+  ; channel_distributor : Channel_distributor.t
 }
 
 let send t f =
@@ -50,6 +133,8 @@ let create transport_config send_message update_packet_writer
   ; transport_config
   ; service_response_queue = Service_request.Response_queue.create ()
   ; user_auth = User_auth.create ()
+  ; channel_id_generator = Channel_request.Id_generator.create ()
+  ; channel_distributor = Channel_distributor.create ()
   }
 ;;
 
@@ -164,6 +249,17 @@ let handle_new_keys t =
   | _ -> assert false
 ;;
 
+let handle_global_request t read_buffer =
+  let request_name = Read_buffer.string read_buffer in
+  let want_reply = Read_buffer.bool read_buffer in
+  print_s
+    [%message
+      "Received global request" (request_name : string) (want_reply : bool)];
+  if want_reply then
+    send t (fun write_buffer ->
+        Write_buffer.message_id write_buffer Request_failure)
+;;
+
 let handle_message ~payload t read_buffer =
   let message_type = Read_buffer.message_id read_buffer in
   match message_type with
@@ -175,6 +271,22 @@ let handle_message ~payload t read_buffer =
   | Service_accept ->
       Service_request.respond t.service_response_queue read_buffer
   | Userauth_failure -> User_auth.register_denied t.user_auth read_buffer
+  | Userauth_success -> User_auth.register_accepted t.user_auth
+  | Global_request -> handle_global_request t read_buffer
+  | Channel_open_confirmation ->
+      Channel_distributor.confirm_created t.channel_distributor read_buffer
+  | Channel_window_adjust ->
+      Channel_distributor.handle_window_adjust t.channel_distributor read_buffer
+  | Channel_success ->
+      Channel_distributor.handle_success t.channel_distributor read_buffer
+  | Channel_data ->
+      Channel_distributor.handle_data t.channel_distributor read_buffer
+  | Channel_request ->
+      Channel_distributor.handle_request t.channel_distributor read_buffer
+  | Channel_eof ->
+      Channel_distributor.handle_eof t.channel_distributor read_buffer
+  | Channel_close ->
+      Channel_distributor.handle_close t.channel_distributor read_buffer
   | _ ->
       raise_s
         [%message "Unimplemented message type" (message_type : Message_id.t)]
@@ -185,3 +297,26 @@ let request_service t ~service_name =
 ;;
 
 let request_auth t auth = send t (auth t.user_auth)
+
+let request_session_channel t =
+  let id =
+    send t
+      (Channel_request.request_channel_session_create t.channel_id_generator)
+  in
+  let%map reader, confirmation =
+    Channel_distributor.create_channel t.channel_distributor id
+  in
+  (id, reader, confirmation)
+;;
+
+let request_pty t (_id : int) ~server_id ~term ~width ~height =
+  send t
+    (Channel_request.request_pty ~server_id ~term ~width ~height
+       ~want_reply:true)
+;;
+
+let request_exec t (_id : int) ~server_id ~command =
+  send t (Channel_request.request_exec ~server_id ~command ~want_reply:true)
+;;
+
+let close_channel t id = Channel_distributor.close t.channel_distributor id
