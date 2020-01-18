@@ -26,7 +26,9 @@ module Server_message = struct
   type t =
     | Adjust of int
     | Success
+    | Failure
     | Data of string
+    | Stderr of string
     | Request of Request.t
     | Eof
     | Close
@@ -41,7 +43,7 @@ module Confirmation = struct
   [@@deriving sexp_of]
 end
 
-let initial_window_size = 4096
+let initial_window_size = Uint32.(to_int max_int)
 
 let request_generic_create generator ~channel_type write_buffer =
   let id = Id_generator.generate_id generator in
@@ -78,6 +80,13 @@ let request_pty ~server_id ~want_reply ~term ~width ~height write_buffer =
   Write_buffer.string write_buffer "\x00"
 ;;
 
+let request_shell ~server_id ~want_reply write_buffer =
+  Write_buffer.message_id write_buffer Channel_request;
+  Write_buffer.uint32 write_buffer server_id;
+  Write_buffer.string write_buffer "shell";
+  Write_buffer.bool write_buffer want_reply
+;;
+
 let request_exec ~server_id ~want_reply ~command write_buffer =
   Write_buffer.message_id write_buffer Channel_request;
   Write_buffer.uint32 write_buffer server_id;
@@ -86,21 +95,40 @@ let request_exec ~server_id ~want_reply ~command write_buffer =
   Write_buffer.string write_buffer command
 ;;
 
+let send_data ~server_id ~data write_buffer =
+  Write_buffer.message_id write_buffer Channel_data;
+  Write_buffer.uint32 write_buffer server_id;
+  Write_buffer.string write_buffer data
+;;
+
 let handle_window_adjust read_buffer =
   let id = Read_buffer.uint32 read_buffer in
   let byte_count = Read_buffer.uint32 read_buffer in
   (id, Server_message.Adjust byte_count)
 ;;
 
-let handle_window_success read_buffer =
+let handle_success read_buffer =
   let id = Read_buffer.uint32 read_buffer in
   (id, Server_message.Success)
+;;
+
+let handle_failure read_buffer =
+  let id = Read_buffer.uint32 read_buffer in
+  (id, Server_message.Failure)
 ;;
 
 let handle_data read_buffer =
   let id = Read_buffer.uint32 read_buffer in
   let data = Read_buffer.string read_buffer in
   (id, Server_message.Data data)
+;;
+
+let handle_extended_data read_buffer =
+  let id = Read_buffer.uint32 read_buffer in
+  let stream = Read_buffer.uint32 read_buffer in
+  assert (stream = 1);
+  let data = Read_buffer.string read_buffer in
+  (id, Server_message.Stderr data)
 ;;
 
 let handle_eof read_buffer =

@@ -64,7 +64,13 @@ module Channel_distributor = struct
   ;;
 
   let handle_success (t : t) read_buffer =
-    let id, message = Channel_request.handle_window_success read_buffer in
+    let id, message = Channel_request.handle_success read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_failure (t : t) read_buffer =
+    let id, message = Channel_request.handle_success read_buffer in
     let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
     Pipe.write_without_pushback write_pipe message
   ;;
@@ -77,6 +83,12 @@ module Channel_distributor = struct
 
   let handle_eof (t : t) read_buffer =
     let id, message = Channel_request.handle_eof read_buffer in
+    let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
+    Pipe.write_without_pushback write_pipe message
+  ;;
+
+  let handle_extended_data (t : t) read_buffer =
+    let id, message = Channel_request.handle_extended_data read_buffer in
     let write_pipe = Hashtbl.find_exn t id |> State.write_pipe in
     Pipe.write_without_pushback write_pipe message
   ;;
@@ -279,8 +291,12 @@ let handle_message ~payload t read_buffer =
       Channel_distributor.handle_window_adjust t.channel_distributor read_buffer
   | Channel_success ->
       Channel_distributor.handle_success t.channel_distributor read_buffer
+  | Channel_failure ->
+      Channel_distributor.handle_failure t.channel_distributor read_buffer
   | Channel_data ->
       Channel_distributor.handle_data t.channel_distributor read_buffer
+  | Channel_extended_data ->
+      Channel_distributor.handle_extended_data t.channel_distributor read_buffer
   | Channel_request ->
       Channel_distributor.handle_request t.channel_distributor read_buffer
   | Channel_eof ->
@@ -309,6 +325,10 @@ let request_session_channel t =
   (id, reader, confirmation)
 ;;
 
+let request_shell t (_id : int) ~server_id =
+  send t (Channel_request.request_shell ~server_id ~want_reply:true)
+;;
+
 let request_pty t (_id : int) ~server_id ~term ~width ~height =
   send t
     (Channel_request.request_pty ~server_id ~term ~width ~height
@@ -317,6 +337,10 @@ let request_pty t (_id : int) ~server_id ~term ~width ~height =
 
 let request_exec t (_id : int) ~server_id ~command =
   send t (Channel_request.request_exec ~server_id ~command ~want_reply:true)
+;;
+
+let send_data t (_id : int) ~server_id ~data =
+  send t (Channel_request.send_data ~server_id ~data)
 ;;
 
 let close_channel t id = Channel_distributor.close t.channel_distributor id
