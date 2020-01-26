@@ -33,19 +33,26 @@ module Method = struct
     State (M.create ~certificate ~scratch_pad, host_validator, t)
   ;;
 
-  module Ssh_rsa = struct
+  module Make_ssh_rsa (Hash : sig
+    val oid : string
+
+    val name : string
+
+    val digest : Cstruct.t -> Cstruct.t
+  end) =
+  struct
     type t = Nocrypto.Rsa.pub
 
     type host_validator = unit
 
-    let name = "ssh-rsa"
+    let name = Hash.name
 
     let create ~certificate ~scratch_pad : t =
       print_s [%message (certificate : String.Hexdump.t)];
       let read_buffer = Write_buffer.read_buffer scratch_pad in
       Write_buffer.bytes scratch_pad certificate;
       let algorithm = Read_buffer.string read_buffer in
-      assert (String.equal algorithm name);
+      assert (String.equal algorithm "ssh-rsa");
       let e = Read_buffer.mpint read_buffer in
       let n = Read_buffer.mpint read_buffer in
       Write_buffer.reset scratch_pad;
@@ -53,10 +60,7 @@ module Method = struct
     ;;
 
     (* https://tools.ietf.org/html/rfc8017 *)
-    let oid =
-      "\x30\x21\x30\x09\x06\x05\x2b\x0e\x03\x02\x1a\x05\x00\x04\x14"
-      |> Cstruct.of_string
-    ;;
+    let oid = Cstruct.of_string Hash.oid
 
     let verify t ~scratch_pad (kex_result : Kex.Kex_result.t) =
       let read_buffer = Write_buffer.read_buffer scratch_pad in
@@ -69,7 +73,7 @@ module Method = struct
       |> Option.value_map ~default:false ~f:(fun decoded ->
              let personal_signed =
                Cstruct.of_string kex_result.shared_hash
-               |> Nocrypto.Hash.SHA1.digest |> Cstruct.append oid
+               |> Hash.digest |> Cstruct.append oid
              in
              print_s
                [%message
@@ -79,9 +83,51 @@ module Method = struct
     ;;
   end
 
+  module Ssh_rsa = Make_ssh_rsa (struct
+    let oid = "\x30\x21\x30\x09\x06\x05\x2b\x0e\x03\x02\x1a\x05\x00\x04\x14"
+
+    let digest = Nocrypto.Hash.SHA1.digest
+
+    let name = "ssh-rsa"
+  end)
+
+  module Ssh_rsa_sha256 = Make_ssh_rsa (struct
+    let oid =
+      "\x30\x31\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01\x05\x00\x04\x20"
+    ;;
+
+    let digest = Nocrypto.Hash.SHA256.digest
+
+    let name = "rsa-sha2-256"
+  end)
+
+  module Ssh_rsa_sha512 = Make_ssh_rsa (struct
+    let oid =
+      "\x30\x51\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x03\x05\x00\x04\x40"
+    ;;
+
+    let digest = Nocrypto.Hash.SHA512.digest
+
+    let name = "rsa-sha2-512"
+  end)
+
   let ssh_rsa ~host_validator : t = T (host_validator, (module Ssh_rsa))
 
-  let all = [ ssh_rsa ~host_validator:() ]
+  let ssh_rsa_sha256 ~host_validator : t =
+    T (host_validator, (module Ssh_rsa_sha256))
+  ;;
+
+  let ssh_rsa_sha512 ~host_validator : t =
+    T (host_validator, (module Ssh_rsa_sha512))
+  ;;
+
+  let all =
+    [
+      ssh_rsa_sha512 ~host_validator:()
+    ; ssh_rsa_sha256 ~host_validator:()
+    ; ssh_rsa ~host_validator:()
+    ]
+  ;;
 end
 
 let verify (State (t, _, (module M))) = M.verify t
