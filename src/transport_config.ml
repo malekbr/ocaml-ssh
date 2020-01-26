@@ -2,7 +2,7 @@ open! Core
 
 type t = {
     kex : Kex.Method.t list
-  ; public_keys : Public_key_algorithm.t list
+  ; public_keys : Public_key_algorithm.Method.t list
   ; encryption : Encryption.Method.t list
   ; mac : Mac.Method.t list
   ; compression : Compression.Method.t list
@@ -11,7 +11,7 @@ type t = {
 let default =
   {
     kex = Kex.Method.all
-  ; public_keys = Public_key_algorithm.all
+  ; public_keys = Public_key_algorithm.Method.all
   ; encryption = Encryption.Method.all
   ; mac = Mac.Method.all
   ; compression = Compression.Method.all
@@ -24,7 +24,9 @@ let write t ~cookie packet_message =
   Write_buffer.message_id packet_message Key_exchange_init;
   Write_buffer.bytes packet_message cookie;
   let kex = List.map t.kex ~f:Kex.Method.name in
-  let public_keys = List.map t.public_keys ~f:Public_key_algorithm.name in
+  let public_keys =
+    List.map t.public_keys ~f:Public_key_algorithm.Method.name
+  in
   let encryption = List.map t.encryption ~f:Encryption.Method.name in
   let mac = List.map t.mac ~f:Mac.Method.name in
   let compression = List.map t.compression ~f:Compression.Method.name in
@@ -91,6 +93,7 @@ module Negotiated_algorithms = struct
 
   type t = {
       kex : Kex.t
+    ; public_key : Public_key_algorithm.Method.t
     ; encryption_c_to_s : Encryption.Method.t
     ; encryption_s_to_c : Encryption.Method.t
     ; mac_c_to_s : Mac.Method.t
@@ -111,6 +114,10 @@ let negotiate t (received : Received.t) =
   let%bind kex =
     negotiate_algorithm t.kex received.kex Kex.Method.name
     |> Option.map ~f:Kex.Method.create
+  in
+  let%bind public_key =
+    negotiate_algorithm t.public_keys received.public_keys
+      Public_key_algorithm.Method.name
   in
   let%bind encryption_c_to_s =
     negotiate_algorithm t.encryption received.encryption_c_to_s
@@ -143,5 +150,6 @@ let negotiate t (received : Received.t) =
     ; mac_s_to_c
     ; compression_c_to_s
     ; compression_s_to_c
+    ; public_key
     }
 ;;

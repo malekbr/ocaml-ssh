@@ -17,7 +17,21 @@ let test ~where ~username ~command:_ =
   let%bind result =
     Ocaml_ssh.Transport.request_password connection ~username ~password
   in
-  print_s [%message (result : Ocaml_ssh.User_auth.Auth_response.t)];
+  (*
+  let%bind result =
+    Ocaml_ssh.Transport.request_keyboard_interactive connection ~username
+      ~respond:(fun respond ->
+        User_auth.Keyboard_authentication.Request.name respond
+        |> printf "name: %s\n";
+        User_auth.Keyboard_authentication.Request.instruction respond
+        |> printf "instruction: %s\n";
+        User_auth.Keyboard_authentication.Request.respond respond
+          (fun ~prompt ~echo ->
+            print_string prompt;
+            Readline.read_line ~echo))
+  in
+  *)
+  print_s [%message (result : Ocaml_ssh.User_auth.Auth_result.t)];
   let%bind channel = Ocaml_ssh.Transport.request_channel connection in
   print_s [%message (channel : Ocaml_ssh.Channel.t)];
   (*

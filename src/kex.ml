@@ -13,6 +13,7 @@ module Kex_result = struct
       public_host_key : String.Hexdump.t
     ; shared_key : Z.t
     ; shared_hash : String.Hexdump.t
+    ; hash_signature : String.Hexdump.t
   }
   [@@deriving sexp_of]
 end
@@ -82,8 +83,8 @@ module Method = struct
       Nocrypto.Hash.SHA1.digest (Cstruct.of_string string) |> Cstruct.to_string
     ;;
 
-    let compute_shared_hash ~e ~f ~shared_key ~public_host_key ~scratch_pad
-        ~client_identification_string ~server_identification_string
+    let compute_shared_hash ~e ~f ~shared_key ~hash_signature ~public_host_key
+        ~scratch_pad ~client_identification_string ~server_identification_string
         ~client_kex_payload ~server_kex_payload =
       Write_buffer.string scratch_pad client_identification_string;
       Write_buffer.string scratch_pad server_identification_string;
@@ -95,7 +96,7 @@ module Method = struct
       Write_buffer.mpint scratch_pad shared_key;
       let shared_hash = Write_buffer.consume_to_string scratch_pad in
       let shared_hash = hash shared_hash in
-      Ok Kex_result.{ public_host_key; shared_key; shared_hash }
+      Ok Kex_result.{ public_host_key; shared_key; shared_hash; hash_signature }
     ;;
 
     let receive t code read_buffer =
@@ -103,13 +104,14 @@ module Method = struct
       let public_host_key = Read_buffer.string read_buffer in
       let f = Read_buffer.mpint read_buffer in
       (* TODO malekbr: verify *)
-      let _hash_signature = Read_buffer.string read_buffer in
+      let hash_signature = Read_buffer.string read_buffer in
       let shared_key =
         Nocrypto.Dh.shared group t.secret (Nocrypto.Numeric.Z.to_cstruct_be f)
         |> Option.value_exn |> Nocrypto.Numeric.Z.of_cstruct_be
       in
       Set_once.set_exn t.result [%here]
-        (compute_shared_hash ~e:t.e ~f ~shared_key ~public_host_key)
+        (compute_shared_hash ~hash_signature ~e:t.e ~f ~shared_key
+           ~public_host_key)
     ;;
 
     let negotiate t =

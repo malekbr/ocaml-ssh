@@ -66,11 +66,17 @@ let request_auth { state; _ } =
 ;;
 
 let request_auth_none ~username { state; _ } =
-  State.request_auth state (User_auth.request_none ~username)
+  State.request_auth state ~username User_auth.Mode.none
 ;;
 
 let request_password ~username ~password { state; _ } =
-  State.request_auth state (User_auth.request_password ~username ~password)
+  State.request_auth state ~username (User_auth.Mode.password password)
+;;
+
+let request_keyboard_interactive ~username ?(submethods = []) ~respond
+    { state; _ } =
+  State.request_auth state ~username
+    (User_auth.Mode.keyboard_interactive ~submethods ~respond)
 ;;
 
 let request_channel { state; _ } = Channel.create state

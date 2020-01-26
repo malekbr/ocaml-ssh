@@ -117,11 +117,13 @@ type t = {
   ; on_connection_established : unit -> unit
   ; transport_config : Transport_config.t
   ; service_response_queue : Service_request.Response_queue.t
-  ; user_auth : User_auth.t
+  ; mutable user_auth : User_auth.t option
   ; channel_id_generator : Channel_request.Id_generator.t
   ; channel_distributor : Channel_distributor.t
 }
 
+(* Send cannot be async. If you need to do work that is async, call send
+ * after *)
 let send t f =
   let result = Set_once.create () in
   t.send_message (fun write_buffer ->
@@ -144,7 +146,7 @@ let create transport_config send_message update_packet_writer
   ; server_identification
   ; transport_config
   ; service_response_queue = Service_request.Response_queue.create ()
-  ; user_auth = User_auth.create ()
+  ; user_auth = None
   ; channel_id_generator = Channel_request.Id_generator.create ()
   ; channel_distributor = Channel_distributor.create ()
   }
@@ -219,8 +221,18 @@ let rec respond_kex t (algorithms : Transport_config.Negotiated_algorithms.t)
           ~client_kex_payload ~server_kex_payload
         |> Or_error.ok_exn
       in
+      let public_key =
+        Public_key_algorithm.Method.create algorithms.public_key
+          ~certificate:negotiated.public_host_key ~scratch_pad:t.scratch_pad
+      in
+      let verification =
+        Public_key_algorithm.verify public_key ~scratch_pad:t.scratch_pad
+          negotiated
+      in
+      print_s [%message (verification : bool)];
       Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
       t.send_message (fun writer -> Write_buffer.message_id writer New_keys);
+      print_s [%message (negotiated : Kex.Kex_result.t)];
       t.state <- Exchanged_keys { negotiated; algorithms }
 ;;
 
@@ -233,6 +245,7 @@ let handle_key_exchange_init t ~server_kex_payload read_buffer =
         Write_buffer.consume_to_string t.scratch_pad
       in
       let server_config = Transport_config.Received.parse read_buffer in
+      print_s [%message (server_config : Transport_config.Received.t)];
       let algorithms =
         Transport_config.negotiate t.transport_config server_config
         |> Option.value_exn
@@ -282,8 +295,14 @@ let handle_message ~payload t read_buffer =
       handle_key_exchange t read_buffer message_type
   | Service_accept ->
       Service_request.respond t.service_response_queue read_buffer
-  | Userauth_failure -> User_auth.register_denied t.user_auth read_buffer
-  | Userauth_success -> User_auth.register_accepted t.user_auth
+  | Userauth_failure ->
+      User_auth.register_denied (Option.value_exn t.user_auth) read_buffer
+  | Userauth_success ->
+      User_auth.register_accepted (Option.value_exn t.user_auth)
+  | Userauth_algorithm_specific message_id ->
+      User_auth.register_negotiation
+        (Option.value_exn t.user_auth)
+        ~message_id read_buffer
   | Global_request -> handle_global_request t read_buffer
   | Channel_open_confirmation ->
       Channel_distributor.confirm_created t.channel_distributor read_buffer
@@ -312,7 +331,22 @@ let request_service t ~service_name =
   send t (Service_request.request t.service_response_queue ~service_name)
 ;;
 
-let request_auth t auth = send t (auth t.user_auth)
+let request_auth t ~username mode =
+  let user_auth = User_auth.create mode in
+  t.user_auth <- Some user_auth;
+  let%bind result = send t (User_auth.request user_auth ~username) in
+  Deferred.repeat_until_finished result (function
+    | User_auth.Auth_response.Accepted ->
+        `Finished User_auth.Auth_result.Accepted |> return
+    | Refused { alternatives } ->
+        `Finished (User_auth.Auth_result.Refused { alternatives }) |> return
+    | Authenticating authenticating ->
+        let%bind write_response =
+          User_auth.respond_negotation user_auth authenticating
+        in
+        let%map response = send t write_response in
+        `Repeat response)
+;;
 
 let request_session_channel t =
   let id =

@@ -1,8 +1,31 @@
 open! Core
 open! Async
 
-let read_password () =
-  print_string "Password: ";
+let read_line ~echo =
+  let%bind () =
+    if echo then Deferred.unit
+    else
+      let%bind t = Unix.Terminal_io.tcgetattr (Fd.stdin ()) in
+      t.c_echo <- false;
+      Unix.Terminal_io.tcsetattr t (Fd.stdin ()) ~mode:TCSANOW
+  in
+  let%bind input = Reader.read_line (Lazy.force Reader.stdin) in
+  let input =
+    match input with `Ok password -> password | `Eof -> assert false
+  in
+  let%map () =
+    if echo then Deferred.unit
+    else
+      let%bind t = Unix.Terminal_io.tcgetattr (Fd.stdin ()) in
+      t.c_echo <- true;
+      let%map () = Unix.Terminal_io.tcsetattr t (Fd.stdin ()) ~mode:TCSANOW in
+      print_endline ""
+  in
+  input
+;;
+
+let read_password ?(prompt = "Password: ") () =
+  print_string prompt;
   let%bind () = Writer.flushed (Lazy.force Writer.stdout) in
   let%bind t = Unix.Terminal_io.tcgetattr (Fd.stdin ()) in
   t.c_echo <- false;
@@ -14,6 +37,5 @@ let read_password () =
   in
   t.c_echo <- true;
   let%bind () = Unix.Terminal_io.tcsetattr t (Fd.stdin ()) ~mode:TCSANOW in
-  print_endline "";
   return password
 ;;
