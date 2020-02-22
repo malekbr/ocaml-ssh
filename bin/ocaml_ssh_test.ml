@@ -11,7 +11,14 @@ let test ~where ~username ~command:_ =
     | Some username -> return username
     | None -> Unix.getlogin ()
   in
-  let%bind connection = Ocaml_ssh.Transport.create ~where_to_connect in
+  let transport_config =
+    Transport_config.default ~validate:(fun ~fingerprint ->
+        printf "Is this fingerprint valid: %s? " fingerprint;
+        Readline.yes_or_no ())
+  in
+  let%bind connection =
+    Ocaml_ssh.Transport.create ~transport_config ~where_to_connect >>| ok_exn
+  in
   let%bind () = Ocaml_ssh.Transport.request_auth connection in
   let%bind password = Readline.read_password () in
   let%bind result =

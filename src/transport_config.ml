@@ -8,10 +8,10 @@ type t = {
   ; compression : Compression.Method.t list
 }
 
-let default =
+let default ~validate =
   {
     kex = Kex.Method.all
-  ; public_keys = Public_key_algorithm.Method.all
+  ; public_keys = Public_key_algorithm.Method.all ~validate
   ; encryption = Encryption.Method.all
   ; mac = Mac.Method.all
   ; compression = Compression.Method.all

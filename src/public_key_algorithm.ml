@@ -1,4 +1,5 @@
 open! Core
+open! Async
 
 module type S = sig
   type t
@@ -10,7 +11,12 @@ module type S = sig
   val create : certificate:string -> scratch_pad:Write_buffer.t -> t
 
   (* TODO Or_error *)
-  val verify : t -> scratch_pad:Write_buffer.t -> Kex.Kex_result.t -> bool
+  val verify :
+       t
+    -> host_validator
+    -> scratch_pad:Write_buffer.t
+    -> Kex.Kex_result.t
+    -> bool Deferred.t
 end
 
 type t =
@@ -43,7 +49,7 @@ module Method = struct
   struct
     type t = Nocrypto.Rsa.pub
 
-    type host_validator = unit
+    type host_validator = Nocrypto.Rsa.pub -> bool Deferred.t
 
     let name = Hash.name
 
@@ -62,24 +68,27 @@ module Method = struct
     (* https://tools.ietf.org/html/rfc8017 *)
     let oid = Cstruct.of_string Hash.oid
 
-    let verify t ~scratch_pad (kex_result : Kex.Kex_result.t) =
+    let verify t host_validator ~scratch_pad (kex_result : Kex.Kex_result.t) =
       let read_buffer = Write_buffer.read_buffer scratch_pad in
       Write_buffer.bytes scratch_pad kex_result.hash_signature;
       let algorithm = Read_buffer.string read_buffer in
       assert (String.equal algorithm name);
       let signed = Read_buffer.string read_buffer in
       Write_buffer.reset scratch_pad;
-      Nocrypto.Rsa.PKCS1.sig_decode ~key:t (Cstruct.of_string signed)
-      |> Option.value_map ~default:false ~f:(fun decoded ->
-             let personal_signed =
-               Cstruct.of_string kex_result.shared_hash
-               |> Hash.digest |> Cstruct.append oid
-             in
-             print_s
-               [%message
-                 (Cstruct.to_string personal_signed : String.Hexdump.t)
-                   (Cstruct.to_string decoded : String.Hexdump.t)];
-             Cstruct.equal decoded personal_signed)
+      let key_valid =
+        Nocrypto.Rsa.PKCS1.sig_decode ~key:t (Cstruct.of_string signed)
+        |> Option.value_map ~default:false ~f:(fun decoded ->
+               let personal_signed =
+                 Cstruct.of_string kex_result.shared_hash
+                 |> Hash.digest |> Cstruct.append oid
+               in
+               print_s
+                 [%message
+                   (Cstruct.to_string personal_signed : String.Hexdump.t)
+                     (Cstruct.to_string decoded : String.Hexdump.t)];
+               Cstruct.equal decoded personal_signed)
+      in
+      Deferred.map (host_validator t) ~f:(( && ) key_valid)
     ;;
   end
 
@@ -121,13 +130,25 @@ module Method = struct
     T (host_validator, (module Ssh_rsa_sha512))
   ;;
 
-  let all =
+  let fingerprint (pub : Nocrypto.Rsa.pub) ~validate =
+    let output = Buffer.create 0 in
+    Cstruct.concat
+      [
+        Nocrypto.Numeric.Z.to_cstruct_be pub.e
+      ; Nocrypto.Numeric.Z.to_cstruct_be pub.n
+      ]
+    |> Nocrypto.Hash.SHA256.digest
+    |> Cstruct.hexdump_to_buffer output;
+    validate ~fingerprint:(Buffer.To_string.subo output)
+  ;;
+
+  let all ~validate =
     [
-      ssh_rsa_sha512 ~host_validator:()
-    ; ssh_rsa_sha256 ~host_validator:()
-    ; ssh_rsa ~host_validator:()
+      ssh_rsa_sha512 ~host_validator:(fingerprint ~validate)
+    ; ssh_rsa_sha256 ~host_validator:(fingerprint ~validate)
+    ; ssh_rsa ~host_validator:(fingerprint ~validate)
     ]
   ;;
 end
 
-let verify (State (t, _, (module M))) = M.verify t
+let verify (State (t, host_validator, (module M))) = M.verify t host_validator

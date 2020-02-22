@@ -24,6 +24,12 @@ let read_line ~echo =
   input
 ;;
 
+let yes_or_no () =
+  print_string "[y/yes/anything else is no]";
+  let%map result = read_line ~echo:true in
+  match String.lowercase result with "yes" | "y" -> true | _ -> false
+;;
+
 let read_password ?(prompt = "Password: ") () =
   print_string prompt;
   let%bind () = Writer.flushed (Lazy.force Writer.stdout) in

@@ -13,7 +13,7 @@ type t = { state : State.t; closed : unit Deferred.t } [@@deriving fields]
 
 let debug_raw = false
 
-let create ~where_to_connect =
+let create ~transport_config ~where_to_connect =
   let%bind () = Init_rng.reseed () in
   let%bind _socket, reader, writer = Tcp.connect where_to_connect in
   let send s =
@@ -32,7 +32,7 @@ let create ~where_to_connect =
     match s with `Ok s -> s | `Eof -> failwith "EOF"
   in
   let state =
-    State.create Transport_config.default
+    State.create transport_config
       (fun writer ->
         writer packet_message;
         Write_buffer.consume_to_string packet_message
@@ -43,7 +43,6 @@ let create ~where_to_connect =
       ~on_connection_established:(Ivar.fill connection_established)
       ~server_identification
   in
-  (* TODO malekbr: Implement host verification *)
   let closed =
     Reader.pipe reader
     |> Pipe.iter_without_pushback ~f:(fun s ->
@@ -57,7 +56,7 @@ let create ~where_to_connect =
                  print_s [%message "failed to verify" (sequence_number : int)]
              | `Message buffer -> State.handle_message ~payload state buffer))
   in
-  let%map () = Ivar.read connection_established in
+  let%map.Deferred.Or_error () = Ivar.read connection_established in
   { state; closed }
 ;;
 

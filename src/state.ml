@@ -11,7 +11,9 @@ type state =
   | Exchanged_keys of {
         negotiated : Kex.Kex_result.t
       ; algorithms : Transport_config.Negotiated_algorithms.t
+      ; verification : [ `Success | `Failure ] Deferred.t
     }
+  | Refused_host
   | No_key_exchange
 
 module Channel_distributor = struct
@@ -114,7 +116,7 @@ type t = {
   ; update_packet_reader : (Packet_reader.t -> unit) -> unit
   ; session_id : string Set_once.t
   ; server_identification : string
-  ; on_connection_established : unit -> unit
+  ; on_connection_established : unit Or_error.t -> unit
   ; transport_config : Transport_config.t
   ; service_response_queue : Service_request.Response_queue.t
   ; mutable user_auth : User_auth.t option
@@ -225,15 +227,16 @@ let rec respond_kex t (algorithms : Transport_config.Negotiated_algorithms.t)
         Public_key_algorithm.Method.create algorithms.public_key
           ~certificate:negotiated.public_host_key ~scratch_pad:t.scratch_pad
       in
-      let verification =
-        Public_key_algorithm.verify public_key ~scratch_pad:t.scratch_pad
-          negotiated
-      in
-      print_s [%message (verification : bool)];
-      Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
-      t.send_message (fun writer -> Write_buffer.message_id writer New_keys);
-      print_s [%message (negotiated : Kex.Kex_result.t)];
-      t.state <- Exchanged_keys { negotiated; algorithms }
+      let ready = Ivar.create () in
+      t.state <-
+        Exchanged_keys
+          { negotiated; algorithms; verification = Ivar.read ready };
+      don't_wait_for
+        (let%map verified =
+           Public_key_algorithm.verify public_key ~scratch_pad:t.scratch_pad
+             negotiated
+         in
+         if verified then Ivar.fill ready `Success else Ivar.fill ready `Failure)
 ;;
 
 let handle_key_exchange_init t ~server_kex_payload read_buffer =
@@ -266,11 +269,22 @@ let handle_key_exchange t read_buffer message_type =
 
 let handle_new_keys t =
   match t.state with
-  | Exchanged_keys { algorithms; negotiated } ->
-      set_algorithm_s_to_c t negotiated algorithms;
-      set_algorithm_c_to_s t negotiated algorithms;
-      t.on_connection_established ();
-      t.state <- No_key_exchange
+  | Exchanged_keys { algorithms; negotiated; verification } ->
+      don't_wait_for
+        ( match%map verification with
+        | `Success ->
+            Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
+            t.send_message (fun writer ->
+                Write_buffer.message_id writer New_keys);
+            print_s [%message (negotiated : Kex.Kex_result.t)];
+            set_algorithm_s_to_c t negotiated algorithms;
+            set_algorithm_c_to_s t negotiated algorithms;
+            t.on_connection_established (Ok ());
+            t.state <- No_key_exchange
+        | `Failure ->
+            t.state <- Refused_host;
+            t.on_connection_established
+              (error_s [%message "Refused host connection"]) )
   | _ -> assert false
 ;;
 
