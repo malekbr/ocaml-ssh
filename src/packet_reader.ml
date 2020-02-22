@@ -44,7 +44,7 @@ let create () =
   ; input_buffer = Growable_buffer.create ()
   ; state = empty_state ~work_buffer
   ; read_buffer = Write_buffer.read_buffer work_buffer
-  ; compression = Compression.Method.(create none)
+  ; compression = Compression.Method.(create none ~authenticated:(const false))
   ; encryption =
       Encryption.Method.(create_decrypt none ~initialization_vector:"" ~key:"")
   ; mac = Mac.Method.(create none ~key:"")

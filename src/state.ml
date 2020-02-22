@@ -122,6 +122,7 @@ type t = {
   ; mutable user_auth : User_auth.t option
   ; channel_id_generator : Channel_request.Id_generator.t
   ; channel_distributor : Channel_distributor.t
+  ; mutable authenticated : bool
 }
 
 (* Send cannot be async. If you need to do work that is async, call send
@@ -151,6 +152,7 @@ let create transport_config send_message update_packet_writer
   ; user_auth = None
   ; channel_id_generator = Channel_request.Id_generator.create ()
   ; channel_distributor = Channel_distributor.create ()
+  ; authenticated = false
   }
 ;;
 
@@ -178,6 +180,7 @@ let set_algorithm_s_to_c t negotiated
              ~session_id)
       |> Packet_reader.set_mac packet_reader;
       Compression.Method.create algorithms.compression_s_to_c
+        ~authenticated:(fun () -> t.authenticated)
       |> Packet_reader.set_compression packet_reader)
 ;;
 
@@ -205,6 +208,7 @@ let set_algorithm_c_to_s t negotiated
              ~session_id)
       |> Packet_writer.set_mac packet_writer;
       Compression.Method.create algorithms.compression_c_to_s
+        ~authenticated:(fun () -> t.authenticated)
       |> Packet_writer.set_compression packet_writer)
 ;;
 
@@ -351,6 +355,7 @@ let request_auth t ~username mode =
   let%bind result = send t (User_auth.request user_auth ~username) in
   Deferred.repeat_until_finished result (function
     | User_auth.Auth_response.Accepted ->
+        t.authenticated <- true;
         `Finished User_auth.Auth_result.Accepted |> return
     | Refused { alternatives } ->
         `Finished (User_auth.Auth_result.Refused { alternatives }) |> return

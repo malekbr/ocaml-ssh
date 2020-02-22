@@ -14,7 +14,7 @@ let create () =
   let packet_buffer = Write_buffer.create () in
   {
     packet_buffer
-  ; compression = Compression.Method.(create none)
+  ; compression = Compression.Method.(create none ~authenticated:(const false))
   ; encryption =
       Encryption.Method.(create_encrypt none ~initialization_vector:"" ~key:"")
   ; mac = Mac.Method.(create none ~key:"")
