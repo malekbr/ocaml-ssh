@@ -61,7 +61,16 @@ module Method = struct
     end
   end
 
-  module DH_G14_SHA1 = struct
+  module Fixed_group_sha (M : sig
+    val group_number : int
+
+    val group : Nocrypto.Dh.group
+
+    val sha_type : int
+
+    val hash_digest : Cstruct.t -> Cstruct.t
+  end) =
+  struct
     type t = {
         secret : Nocrypto.Dh.secret
       ; e : Z.t
@@ -69,9 +78,9 @@ module Method = struct
       ; result : Negotation.compute_kex_result Set_once.t
     }
 
-    let name = "diffie-hellman-group14-sha1"
+    let name = sprintf "diffie-hellman-group%d-sha%d" M.group_number M.sha_type
 
-    let group = Nocrypto.Dh.Group.oakley_14
+    let group = M.group
 
     let create () =
       let secret, e = Nocrypto.Dh.gen_key group in
@@ -80,7 +89,7 @@ module Method = struct
     ;;
 
     let hash string =
-      Nocrypto.Hash.SHA1.digest (Cstruct.of_string string) |> Cstruct.to_string
+      M.hash_digest (Cstruct.of_string string) |> Cstruct.to_string
     ;;
 
     let compute_shared_hash ~e ~f ~shared_key ~hash_signature ~public_host_key
@@ -128,13 +137,66 @@ module Method = struct
     ;;
   end
 
+  module DH_G14_SHA1 = Fixed_group_sha (struct
+    let group_number = 14
+
+    let sha_type = 1
+
+    let group = Nocrypto.Dh.Group.oakley_14
+
+    let hash_digest = Nocrypto.Hash.SHA1.digest
+  end)
+
+  module DH_G14_SHA256 = Fixed_group_sha (struct
+    let group_number = 14
+
+    let sha_type = 256
+
+    let group = Nocrypto.Dh.Group.oakley_14
+
+    let hash_digest = Nocrypto.Hash.SHA256.digest
+  end)
+
+  module DH_G16_SHA512 = Fixed_group_sha (struct
+    let group_number = 16
+
+    let sha_type = 512
+
+    let group = Nocrypto.Dh.Group.oakley_16
+
+    let hash_digest = Nocrypto.Hash.SHA512.digest
+  end)
+
+  module DH_G18_SHA512 = Fixed_group_sha (struct
+    let group_number = 18
+
+    let sha_type = 512
+
+    let group = Nocrypto.Dh.Group.oakley_18
+
+    let hash_digest = Nocrypto.Hash.SHA512.digest
+  end)
+
   let diffie_hellman_group14_sha1 : t = T (module DH_G14_SHA1)
+
+  let diffie_hellman_group14_sha256 : t = T (module DH_G14_SHA256)
+
+  let diffie_hellman_group16_sha512 : t = T (module DH_G16_SHA512)
+
+  let diffie_hellman_group18_sha512 : t = T (module DH_G18_SHA512)
 
   let name (T (module M)) = M.name
 
   let create (T ((module M) as t)) = State (M.create (), t)
 
-  let all = [ diffie_hellman_group14_sha1 ]
+  let all =
+    [
+      diffie_hellman_group18_sha512
+    ; diffie_hellman_group16_sha512
+    ; diffie_hellman_group14_sha256
+    ; diffie_hellman_group14_sha1
+    ]
+  ;;
 end
 
 let negotiate (State (t, (module M))) = M.negotiate t

@@ -110,7 +110,7 @@ end
 
 type t = {
     mutable state : state
-  ; send_message : (Write_buffer.t -> unit) -> unit
+  ; send_message : 'a. (Write_buffer.t -> 'a) -> 'a
   ; scratch_pad : Write_buffer.t
   ; update_packet_writer : (Packet_writer.t -> unit) -> unit
   ; update_packet_reader : (Packet_reader.t -> unit) -> unit
@@ -125,16 +125,16 @@ type t = {
   ; mutable authenticated : bool
 }
 
+type send_message = { send_message : 'a. (Write_buffer.t -> 'a) -> 'a }
+[@@unboxed]
+
 (* Send cannot be async. If you need to do work that is async, call send
  * after *)
-let send t f =
-  let result = Set_once.create () in
-  t.send_message (fun write_buffer ->
-      f write_buffer |> Set_once.set_exn result [%here]);
-  Set_once.get_exn result [%here]
+let send (t : t) ~non_async_fn =
+  t.send_message (fun write_buffer -> non_async_fn write_buffer)
 ;;
 
-let create transport_config send_message update_packet_writer
+let create transport_config { send_message } update_packet_writer
     update_packet_reader ~on_connection_established ~server_identification =
   let cookie = Transport_config.generate_cookie () in
   send_message (Transport_config.write ~cookie transport_config);
@@ -212,8 +212,9 @@ let set_algorithm_c_to_s t negotiated
       |> Packet_writer.set_compression packet_writer)
 ;;
 
-let rec respond_kex t (algorithms : Transport_config.Negotiated_algorithms.t)
-    ~server_kex_payload ~client_kex_payload =
+let rec respond_kex (t : t)
+    (algorithms : Transport_config.Negotiated_algorithms.t) ~server_kex_payload
+    ~client_kex_payload =
   match Kex.negotiate algorithms.kex with
   | Nothing_to_send -> ()
   | Negotiating f ->
@@ -299,7 +300,7 @@ let handle_global_request t read_buffer =
     [%message
       "Received global request" (request_name : string) (want_reply : bool)];
   if want_reply then
-    send t (fun write_buffer ->
+    send t ~non_async_fn:(fun write_buffer ->
         Write_buffer.message_id write_buffer Request_failure)
 ;;
 
@@ -346,13 +347,15 @@ let handle_message ~payload t read_buffer =
 ;;
 
 let request_service t ~service_name =
-  send t (Service_request.request t.service_response_queue ~service_name)
+  send t
+    ~non_async_fn:
+      (Service_request.request t.service_response_queue ~service_name)
 ;;
 
 let request_auth t ~username mode =
   let user_auth = User_auth.create mode in
   t.user_auth <- Some user_auth;
-  let%bind result = send t (User_auth.request user_auth ~username) in
+  let%bind result = User_auth.request user_auth ~username ~do_write:(send t) in
   Deferred.repeat_until_finished result (function
     | User_auth.Auth_response.Accepted ->
         t.authenticated <- true;
@@ -360,17 +363,18 @@ let request_auth t ~username mode =
     | Refused { alternatives } ->
         `Finished (User_auth.Auth_result.Refused { alternatives }) |> return
     | Authenticating authenticating ->
-        let%bind write_response =
+        let%map response =
           User_auth.respond_negotation user_auth authenticating
+            ~do_write:(send t)
         in
-        let%map response = send t write_response in
         `Repeat response)
 ;;
 
 let request_session_channel t =
   let id =
     send t
-      (Channel_request.request_channel_session_create t.channel_id_generator)
+      ~non_async_fn:
+        (Channel_request.request_channel_session_create t.channel_id_generator)
   in
   let%map reader, confirmation =
     Channel_distributor.create_channel t.channel_distributor id
@@ -379,21 +383,25 @@ let request_session_channel t =
 ;;
 
 let request_shell t (_id : int) ~server_id =
-  send t (Channel_request.request_shell ~server_id ~want_reply:true)
+  send t
+    ~non_async_fn:(Channel_request.request_shell ~server_id ~want_reply:true)
 ;;
 
 let request_pty t (_id : int) ~server_id ~term ~width ~height =
   send t
-    (Channel_request.request_pty ~server_id ~term ~width ~height
-       ~want_reply:true)
+    ~non_async_fn:
+      (Channel_request.request_pty ~server_id ~term ~width ~height
+         ~want_reply:true)
 ;;
 
 let request_exec t (_id : int) ~server_id ~command =
-  send t (Channel_request.request_exec ~server_id ~command ~want_reply:true)
+  send t
+    ~non_async_fn:
+      (Channel_request.request_exec ~server_id ~command ~want_reply:true)
 ;;
 
 let send_data t (_id : int) ~server_id ~data =
-  send t (Channel_request.send_data ~server_id ~data)
+  send t ~non_async_fn:(Channel_request.send_data ~server_id ~data)
 ;;
 
 let close_channel t id = Channel_distributor.close t.channel_distributor id

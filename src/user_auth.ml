@@ -133,16 +133,17 @@ let request_generic ~username ~method_ write_buffer =
   Write_buffer.string write_buffer method_
 ;;
 
-let request t ~username write_buffer =
+let request t ~username ~do_write =
   with_mvar t ~f:(fun () ->
       let method_ = Mode.method_ t.mode in
-      request_generic ~username ~method_ write_buffer;
-      Mode.write_request t.mode write_buffer)
+      do_write ~non_async_fn:(fun write_buffer ->
+          request_generic ~username ~method_ write_buffer;
+          Mode.write_request t.mode write_buffer))
 ;;
 
-let respond_negotation t response =
-  let%map write = Mode.handle_response t.mode response in
-  fun write_buffer -> with_mvar t ~f:(fun () -> write write_buffer)
+let respond_negotation t response ~do_write =
+  let%bind non_async_fn = Mode.handle_response t.mode response in
+  with_mvar t ~f:(fun () -> do_write ~non_async_fn)
 ;;
 
 let register_negotiation t ~message_id read_buffer =

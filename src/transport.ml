@@ -33,11 +33,15 @@ let create ~transport_config ~where_to_connect =
   in
   let state =
     State.create transport_config
-      (fun writer ->
-        writer packet_message;
-        Write_buffer.consume_to_string packet_message
-        |> Packet_writer.generate_message packet_writer
-        |> send)
+      {
+        send_message =
+          (fun writer ->
+            let result = writer packet_message in
+            Write_buffer.consume_to_string packet_message
+            |> Packet_writer.generate_message packet_writer
+            |> send;
+            result)
+      }
       (fun update -> update packet_writer)
       (fun update -> update packet_reader)
       ~on_connection_established:(Ivar.fill connection_established)
