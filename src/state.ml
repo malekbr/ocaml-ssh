@@ -110,7 +110,7 @@ end
 
 type t = {
     mutable state : state
-  ; send_message : 'a. (Write_buffer.t -> 'a) -> 'a
+  ; send_message : 'a. (Write_buffer.t -> [ `Write_complete of 'a ]) -> 'a
   ; scratch_pad : Write_buffer.t
   ; update_packet_writer : (Packet_writer.t -> unit) -> unit
   ; update_packet_reader : (Packet_reader.t -> unit) -> unit
@@ -125,14 +125,14 @@ type t = {
   ; mutable authenticated : bool
 }
 
-type send_message = { send_message : 'a. (Write_buffer.t -> 'a) -> 'a }
+type send_message = {
+    send_message : 'a. (Write_buffer.t -> [ `Write_complete of 'a ]) -> 'a
+}
 [@@unboxed]
 
 (* Send cannot be async. If you need to do work that is async, call send
  * after *)
-let send (t : t) ~non_async_fn =
-  t.send_message (fun write_buffer -> non_async_fn write_buffer)
-;;
+let send (t : t) f = t.send_message (fun write_buffer -> f write_buffer)
 
 let create transport_config { send_message } update_packet_writer
     update_packet_reader ~on_connection_established ~server_identification =
@@ -249,7 +249,9 @@ let handle_key_exchange_init t ~server_kex_payload read_buffer =
   | Sending_transport_config { cookie } ->
       (* We don't get the message id in the payload *)
       let client_kex_payload =
-        Transport_config.write ~cookie t.transport_config t.scratch_pad;
+        let (`Write_complete ()) =
+          Transport_config.write ~cookie t.transport_config t.scratch_pad
+        in
         Write_buffer.consume_to_string t.scratch_pad
       in
       let server_config = Transport_config.Received.parse read_buffer in
@@ -280,7 +282,8 @@ let handle_new_keys t =
         | `Success ->
             Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
             t.send_message (fun writer ->
-                Write_buffer.message_id writer New_keys);
+                Write_buffer.message_id writer New_keys;
+                `Write_complete ());
             print_s [%message (negotiated : Kex.Kex_result.t)];
             set_algorithm_s_to_c t negotiated algorithms;
             set_algorithm_c_to_s t negotiated algorithms;
@@ -300,8 +303,9 @@ let handle_global_request t read_buffer =
     [%message
       "Received global request" (request_name : string) (want_reply : bool)];
   if want_reply then
-    send t ~non_async_fn:(fun write_buffer ->
-        Write_buffer.message_id write_buffer Request_failure)
+    send t (fun write_buffer ->
+        Write_buffer.message_id write_buffer Request_failure;
+        `Write_complete ())
 ;;
 
 let handle_message ~payload t read_buffer =
@@ -347,9 +351,7 @@ let handle_message ~payload t read_buffer =
 ;;
 
 let request_service t ~service_name =
-  send t
-    ~non_async_fn:
-      (Service_request.request t.service_response_queue ~service_name)
+  send t (Service_request.request t.service_response_queue ~service_name)
 ;;
 
 let request_auth t ~username mode =
@@ -373,8 +375,7 @@ let request_auth t ~username mode =
 let request_session_channel t =
   let id =
     send t
-      ~non_async_fn:
-        (Channel_request.request_channel_session_create t.channel_id_generator)
+      (Channel_request.request_channel_session_create t.channel_id_generator)
   in
   let%map reader, confirmation =
     Channel_distributor.create_channel t.channel_distributor id
@@ -383,25 +384,21 @@ let request_session_channel t =
 ;;
 
 let request_shell t (_id : int) ~server_id =
-  send t
-    ~non_async_fn:(Channel_request.request_shell ~server_id ~want_reply:true)
+  send t (Channel_request.request_shell ~server_id ~want_reply:true)
 ;;
 
 let request_pty t (_id : int) ~server_id ~term ~width ~height =
   send t
-    ~non_async_fn:
-      (Channel_request.request_pty ~server_id ~term ~width ~height
-         ~want_reply:true)
+    (Channel_request.request_pty ~server_id ~term ~width ~height
+       ~want_reply:true)
 ;;
 
 let request_exec t (_id : int) ~server_id ~command =
-  send t
-    ~non_async_fn:
-      (Channel_request.request_exec ~server_id ~command ~want_reply:true)
+  send t (Channel_request.request_exec ~server_id ~command ~want_reply:true)
 ;;
 
 let send_data t (_id : int) ~server_id ~data =
-  send t ~non_async_fn:(Channel_request.send_data ~server_id ~data)
+  send t (Channel_request.send_data ~server_id ~data)
 ;;
 
 let close_channel t id = Channel_distributor.close t.channel_distributor id

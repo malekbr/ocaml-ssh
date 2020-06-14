@@ -45,7 +45,8 @@ module Keyboard_authentication = struct
       Write_buffer.message_id write_buffer
         (Userauth_algorithm_specific response_code);
       Write_buffer.uint32 write_buffer (List.length t);
-      List.iter t ~f:(Write_buffer.string write_buffer)
+      List.iter t ~f:(Write_buffer.string write_buffer);
+      `Write_complete ()
     ;;
   end
 
@@ -136,14 +137,15 @@ let request_generic ~username ~method_ write_buffer =
 let request t ~username ~do_write =
   with_mvar t ~f:(fun () ->
       let method_ = Mode.method_ t.mode in
-      do_write ~non_async_fn:(fun write_buffer ->
+      do_write (fun write_buffer ->
           request_generic ~username ~method_ write_buffer;
-          Mode.write_request t.mode write_buffer))
+          Mode.write_request t.mode write_buffer;
+          `Write_complete ()))
 ;;
 
 let respond_negotation t response ~do_write =
-  let%bind non_async_fn = Mode.handle_response t.mode response in
-  with_mvar t ~f:(fun () -> do_write ~non_async_fn)
+  let%bind write = Mode.handle_response t.mode response in
+  with_mvar t ~f:(fun () -> do_write write)
 ;;
 
 let register_negotiation t ~message_id read_buffer =

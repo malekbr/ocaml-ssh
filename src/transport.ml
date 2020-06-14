@@ -36,7 +36,7 @@ let create ~transport_config ~where_to_connect =
       {
         send_message =
           (fun writer ->
-            let result = writer packet_message in
+            let (`Write_complete result) = writer packet_message in
             Write_buffer.consume_to_string packet_message
             |> Packet_writer.generate_message packet_writer
             |> send;

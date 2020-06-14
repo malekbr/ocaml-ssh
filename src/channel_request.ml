@@ -52,7 +52,7 @@ let request_generic_create generator ~channel_type write_buffer =
   Write_buffer.uint32 write_buffer id;
   Write_buffer.uint32 write_buffer initial_window_size;
   Write_buffer.uint32 write_buffer Write_buffer.max_size;
-  id
+  `Write_complete id
 ;;
 
 let request_channel_session_create =
@@ -77,14 +77,16 @@ let request_pty ~server_id ~want_reply ~term ~width ~height write_buffer =
   Write_buffer.uint32 write_buffer height;
   Write_buffer.uint32 write_buffer 0;
   Write_buffer.uint32 write_buffer 0;
-  Write_buffer.string write_buffer "\x00"
+  Write_buffer.string write_buffer "\x00";
+  `Write_complete ()
 ;;
 
 let request_shell ~server_id ~want_reply write_buffer =
   Write_buffer.message_id write_buffer Channel_request;
   Write_buffer.uint32 write_buffer server_id;
   Write_buffer.string write_buffer "shell";
-  Write_buffer.bool write_buffer want_reply
+  Write_buffer.bool write_buffer want_reply;
+  `Write_complete ()
 ;;
 
 let request_exec ~server_id ~want_reply ~command write_buffer =
@@ -92,13 +94,15 @@ let request_exec ~server_id ~want_reply ~command write_buffer =
   Write_buffer.uint32 write_buffer server_id;
   Write_buffer.string write_buffer "exec";
   Write_buffer.bool write_buffer want_reply;
-  Write_buffer.string write_buffer command
+  Write_buffer.string write_buffer command;
+  `Write_complete ()
 ;;
 
 let send_data ~server_id ~data write_buffer =
   Write_buffer.message_id write_buffer Channel_data;
   Write_buffer.uint32 write_buffer server_id;
-  Write_buffer.string write_buffer data
+  Write_buffer.string write_buffer data;
+  `Write_complete ()
 ;;
 
 let handle_window_adjust read_buffer =

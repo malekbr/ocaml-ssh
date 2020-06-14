@@ -28,7 +28,7 @@ module Negotation = struct
     -> Kex_result.t Or_error.t
 
   type t =
-    | Negotiating of (Write_buffer.t -> unit)
+    | Negotiating of (Write_buffer.t -> [ `Write_complete of unit ])
     | Negotiated of compute_kex_result
     | Nothing_to_send
 end
@@ -133,7 +133,8 @@ module Method = struct
             Negotation.Negotiating
               (fun write_buffer ->
                 Write_buffer.message_id write_buffer DH_generic.Code.kex_init;
-                Write_buffer.mpint write_buffer t.e) )
+                Write_buffer.mpint write_buffer t.e;
+                `Write_complete ()) )
     ;;
   end
 

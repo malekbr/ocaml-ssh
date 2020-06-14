@@ -41,7 +41,8 @@ let write t ~cookie packet_message =
   Write_buffer.name_list packet_message [];
   Write_buffer.name_list packet_message [];
   Write_buffer.bool packet_message false;
-  Write_buffer.uint32 packet_message 0
+  Write_buffer.uint32 packet_message 0;
+  `Write_complete ()
 ;;
 
 module Received = struct

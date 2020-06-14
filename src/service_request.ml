@@ -38,7 +38,7 @@ end
 let request response_queue write_buffer ~service_name =
   Write_buffer.message_id write_buffer Service_request;
   Write_buffer.string write_buffer service_name;
-  Response_queue.add response_queue ~service_name
+  `Write_complete (Response_queue.add response_queue ~service_name)
 ;;
 
 let respond response_queue read_buffer =
