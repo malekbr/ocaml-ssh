@@ -42,8 +42,8 @@ let create ~transport_config ~where_to_connect =
             |> send;
             result)
       }
-      (fun update -> update packet_writer)
-      (fun update -> update packet_reader)
+      ~update_packet_writer:(fun update -> update packet_writer)
+      ~update_packet_reader:(fun update -> update packet_reader)
         (* TODO fail if error on second key exchange on the second time *)
       ~on_keys_exchanged:(Ivar.fill_if_empty connection_established)
       ~server_identification

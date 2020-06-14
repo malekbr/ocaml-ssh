@@ -141,8 +141,8 @@ let send_transport_config_and_update_state t =
   t.state <- Sending_transport_config { cookie }
 ;;
 
-let create transport_config { send_message } update_packet_writer
-    update_packet_reader ~on_keys_exchanged ~server_identification =
+let create transport_config { send_message } ~update_packet_writer
+    ~update_packet_reader ~on_keys_exchanged ~server_identification =
   let t =
     {
       state = No_key_exchange
