@@ -11,10 +11,16 @@ let test ~where ~username ~command:_ =
     | Some username -> return username
     | None -> Unix.getlogin ()
   in
+  let fingerprint_is_valid = String.Table.create () in
   let transport_config =
     Transport_config.default ~validate:(fun ~fingerprint ->
-        printf "Is this fingerprint valid: %s? " fingerprint;
-        Readline.yes_or_no ())
+        match Hashtbl.find fingerprint_is_valid fingerprint with
+        | Some result -> return result
+        | None ->
+            printf "Is this fingerprint valid: %s? " fingerprint;
+            let%map result = Readline.yes_or_no () in
+            Hashtbl.set fingerprint_is_valid ~key:fingerprint ~data:result;
+            result)
   in
   let%bind connection =
     Ocaml_ssh.Transport.create ~transport_config ~where_to_connect >>| ok_exn

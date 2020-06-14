@@ -4,17 +4,18 @@ open! Async
 type state =
   | Sending_transport_config of { cookie : string }
   | Key_exchange of {
-        algorithms : Transport_config.Negotiated_algorithms.t
+        algorithms : (Transport_config.Negotiated_algorithms.t[@sexp.opaque])
       ; server_kex_payload : string
       ; client_kex_payload : string
     }
   | Exchanged_keys of {
         negotiated : Kex.Kex_result.t
-      ; algorithms : Transport_config.Negotiated_algorithms.t
+      ; algorithms : (Transport_config.Negotiated_algorithms.t[@sexp.opaque])
       ; verification : [ `Success | `Failure ] Deferred.t
     }
   | Refused_host
   | No_key_exchange
+[@@deriving sexp_of]
 
 module Channel_distributor = struct
   module State = struct
@@ -116,7 +117,7 @@ type t = {
   ; update_packet_reader : (Packet_reader.t -> unit) -> unit
   ; session_id : string Set_once.t
   ; server_identification : string
-  ; on_connection_established : unit Or_error.t -> unit
+  ; on_keys_exchanged : unit Or_error.t -> unit
   ; transport_config : Transport_config.t
   ; service_response_queue : Service_request.Response_queue.t
   ; mutable user_auth : User_auth.t option
@@ -134,26 +135,34 @@ type send_message = {
  * after *)
 let send (t : t) f = t.send_message (fun write_buffer -> f write_buffer)
 
-let create transport_config { send_message } update_packet_writer
-    update_packet_reader ~on_connection_established ~server_identification =
+let send_transport_config_and_update_state t =
   let cookie = Transport_config.generate_cookie () in
-  send_message (Transport_config.write ~cookie transport_config);
-  {
-    state = Sending_transport_config { cookie }
-  ; send_message
-  ; scratch_pad = Write_buffer.create ()
-  ; session_id = Set_once.create ()
-  ; update_packet_reader
-  ; update_packet_writer
-  ; on_connection_established
-  ; server_identification
-  ; transport_config
-  ; service_response_queue = Service_request.Response_queue.create ()
-  ; user_auth = None
-  ; channel_id_generator = Channel_request.Id_generator.create ()
-  ; channel_distributor = Channel_distributor.create ()
-  ; authenticated = false
-  }
+  send t (Transport_config.write ~cookie t.transport_config);
+  t.state <- Sending_transport_config { cookie }
+;;
+
+let create transport_config { send_message } update_packet_writer
+    update_packet_reader ~on_keys_exchanged ~server_identification =
+  let t =
+    {
+      state = No_key_exchange
+    ; send_message
+    ; scratch_pad = Write_buffer.create ()
+    ; session_id = Set_once.create ()
+    ; update_packet_reader
+    ; update_packet_writer
+    ; on_keys_exchanged
+    ; server_identification
+    ; transport_config
+    ; service_response_queue = Service_request.Response_queue.create ()
+    ; user_auth = None
+    ; channel_id_generator = Channel_request.Id_generator.create ()
+    ; channel_distributor = Channel_distributor.create ()
+    ; authenticated = false
+    }
+  in
+  send_transport_config_and_update_state t;
+  t
 ;;
 
 let set_algorithm_s_to_c t negotiated
@@ -244,7 +253,7 @@ let rec respond_kex (t : t)
          if verified then Ivar.fill ready `Success else Ivar.fill ready `Failure)
 ;;
 
-let handle_key_exchange_init t ~server_kex_payload read_buffer =
+let rec handle_key_exchange_init t ~server_kex_payload read_buffer =
   match t.state with
   | Sending_transport_config { cookie } ->
       (* We don't get the message id in the payload *)
@@ -263,6 +272,9 @@ let handle_key_exchange_init t ~server_kex_payload read_buffer =
       respond_kex t algorithms ~server_kex_payload ~client_kex_payload;
       t.state <-
         Key_exchange { algorithms; server_kex_payload; client_kex_payload }
+  | No_key_exchange ->
+      send_transport_config_and_update_state t;
+      handle_key_exchange_init t ~server_kex_payload read_buffer
   | _ -> assert false
 ;;
 
@@ -277,22 +289,24 @@ let handle_key_exchange t read_buffer message_type =
 let handle_new_keys t =
   match t.state with
   | Exchanged_keys { algorithms; negotiated; verification } ->
+      (* As soon as we get this message, every other message by the server uses
+        these keys. *)
+      Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
+      set_algorithm_s_to_c t negotiated algorithms;
       don't_wait_for
         ( match%map verification with
         | `Success ->
-            Set_once.set_if_none t.session_id [%here] negotiated.shared_hash;
             t.send_message (fun writer ->
                 Write_buffer.message_id writer New_keys;
                 `Write_complete ());
             print_s [%message (negotiated : Kex.Kex_result.t)];
-            set_algorithm_s_to_c t negotiated algorithms;
             set_algorithm_c_to_s t negotiated algorithms;
-            t.on_connection_established (Ok ());
+            t.on_keys_exchanged (Ok ());
             t.state <- No_key_exchange
         | `Failure ->
             t.state <- Refused_host;
-            t.on_connection_established
-              (error_s [%message "Refused host connection"]) )
+            t.on_keys_exchanged (error_s [%message "Refused host connection"])
+        )
   | _ -> assert false
 ;;
 

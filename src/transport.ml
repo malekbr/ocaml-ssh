@@ -44,7 +44,8 @@ let create ~transport_config ~where_to_connect =
       }
       (fun update -> update packet_writer)
       (fun update -> update packet_reader)
-      ~on_connection_established:(Ivar.fill connection_established)
+        (* TODO fail if error on second key exchange on the second time *)
+      ~on_keys_exchanged:(Ivar.fill_if_empty connection_established)
       ~server_identification
   in
   let closed =
