@@ -1,6 +1,6 @@
 (library
  (name ocaml_ssh)
- (libraries core async mirage-crypto zarith stdint x509 rresult)
+ (libraries core async mirage-crypto mirage-crypto-rng.unix zarith stdint x509 rresult)
  (inline_tests)
  (preprocess (pps ppx_jane ppx_expect))
   )

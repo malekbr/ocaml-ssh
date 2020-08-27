@@ -17,7 +17,10 @@ let sys_rng () =
   Option.value_exn device
 ;;
 
+let init = lazy (Mirage_crypto_rng_unix.initialize ())
+
 let reseed ?(size = a_little) ?(device = sys_rng) () =
+  Lazy.force init;
   let%bind device = device () in
   Reader.with_file device ~f:(fun reader ->
       let bytes = Bytes.create size in
