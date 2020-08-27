@@ -18,7 +18,7 @@ let default ~validate =
   }
 ;;
 
-let generate_cookie () = Nocrypto.Rng.generate 16 |> Cstruct.to_string
+let generate_cookie () = Mirage_crypto_rng.generate 16 |> Cstruct.to_string
 
 let write t ~cookie packet_message =
   Write_buffer.message_id packet_message Key_exchange_init;

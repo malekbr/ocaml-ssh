@@ -35,7 +35,9 @@ let mpint t =
   let is_non_negative =
     String.is_empty str || Char.(str.[0] < of_int_exn 0x80)
   in
-  let initial = Cstruct.of_string str |> Nocrypto.Numeric.Z.of_cstruct_be in
+  let initial =
+    Cstruct.of_string str |> Mirage_crypto_pk.Z_extra.of_cstruct_be
+  in
   if is_non_negative then initial
   else Z.(shift_left minus_one (String.length str) |> logor initial)
 ;;

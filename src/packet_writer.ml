@@ -36,7 +36,7 @@ let padding_size size ~block_size =
 ;;
 
 let generate_padding padding_size =
-  Nocrypto.Rng.generate padding_size |> Cstruct.to_string
+  Mirage_crypto_rng.generate padding_size |> Cstruct.to_string
 ;;
 
 let generate_message

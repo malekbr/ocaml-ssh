@@ -47,9 +47,9 @@ module Method = struct
     val digest : Cstruct.t -> Cstruct.t
   end) =
   struct
-    type t = Nocrypto.Rsa.pub
+    type t = Mirage_crypto_pk.Rsa.pub
 
-    type host_validator = Nocrypto.Rsa.pub -> bool Deferred.t
+    type host_validator = Mirage_crypto_pk.Rsa.pub -> bool Deferred.t
 
     let name = Hash.name
 
@@ -62,7 +62,10 @@ module Method = struct
       let e = Read_buffer.mpint read_buffer in
       let n = Read_buffer.mpint read_buffer in
       Write_buffer.reset scratch_pad;
-      { e; n }
+      (* TODO make sure exceptions are caught *)
+      Mirage_crypto_pk.Rsa.pub ~e ~n
+      |> Result.map_error ~f:(fun (`Msg msg) -> msg)
+      |> Result.ok_or_failwith
     ;;
 
     (* https://tools.ietf.org/html/rfc8017 *)
@@ -76,7 +79,7 @@ module Method = struct
       let signed = Read_buffer.string read_buffer in
       Write_buffer.reset scratch_pad;
       let key_valid =
-        Nocrypto.Rsa.PKCS1.sig_decode ~key:t (Cstruct.of_string signed)
+        Mirage_crypto_pk.Rsa.PKCS1.sig_decode ~key:t (Cstruct.of_string signed)
         |> Option.value_map ~default:false ~f:(fun decoded ->
                let personal_signed =
                  Cstruct.of_string kex_result.shared_hash
@@ -95,7 +98,7 @@ module Method = struct
   module Ssh_rsa = Make_ssh_rsa (struct
     let oid = "\x30\x21\x30\x09\x06\x05\x2b\x0e\x03\x02\x1a\x05\x00\x04\x14"
 
-    let digest = Nocrypto.Hash.SHA1.digest
+    let digest = Mirage_crypto.Hash.SHA1.digest
 
     let name = "ssh-rsa"
   end)
@@ -105,7 +108,7 @@ module Method = struct
       "\x30\x31\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x01\x05\x00\x04\x20"
     ;;
 
-    let digest = Nocrypto.Hash.SHA256.digest
+    let digest = Mirage_crypto.Hash.SHA256.digest
 
     let name = "rsa-sha2-256"
   end)
@@ -115,7 +118,7 @@ module Method = struct
       "\x30\x51\x30\x0d\x06\x09\x60\x86\x48\x01\x65\x03\x04\x02\x03\x05\x00\x04\x40"
     ;;
 
-    let digest = Nocrypto.Hash.SHA512.digest
+    let digest = Mirage_crypto.Hash.SHA512.digest
 
     let name = "rsa-sha2-512"
   end)
@@ -130,14 +133,14 @@ module Method = struct
     T (host_validator, (module Ssh_rsa_sha512))
   ;;
 
-  let fingerprint (pub : Nocrypto.Rsa.pub) ~validate =
+  let fingerprint (pub : Mirage_crypto_pk.Rsa.pub) ~validate =
     let output = Buffer.create 0 in
     Cstruct.concat
       [
-        Nocrypto.Numeric.Z.to_cstruct_be pub.e
-      ; Nocrypto.Numeric.Z.to_cstruct_be pub.n
+        Mirage_crypto_pk.Z_extra.to_cstruct_be pub.e
+      ; Mirage_crypto_pk.Z_extra.to_cstruct_be pub.n
       ]
-    |> Nocrypto.Hash.SHA256.digest
+    |> Mirage_crypto.Hash.SHA256.digest
     |> Cstruct.hexdump_to_buffer output;
     validate ~fingerprint:(Buffer.To_string.subo output)
   ;;

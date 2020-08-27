@@ -60,7 +60,7 @@ module Method = struct
     let key_length = 20
 
     let create ~key =
-      let hash = Nocrypto.Hash.mac `SHA1 ~key:(Cstruct.of_string key) in
+      let hash = Mirage_crypto.Hash.mac `SHA1 ~key:(Cstruct.of_string key) in
       fun input -> Cstruct.of_string input |> hash |> Cstruct.to_string
     ;;
   end
@@ -81,7 +81,7 @@ module Method = struct
     let key_length = 16
 
     let create ~key =
-      let hash = Nocrypto.Hash.mac `MD5 ~key:(Cstruct.of_string key) in
+      let hash = Mirage_crypto.Hash.mac `MD5 ~key:(Cstruct.of_string key) in
       fun input -> Cstruct.of_string input |> hash |> Cstruct.to_string
     ;;
   end

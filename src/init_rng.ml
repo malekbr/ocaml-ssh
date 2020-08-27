@@ -23,5 +23,5 @@ let reseed ?(size = a_little) ?(device = sys_rng) () =
       let bytes = Bytes.create size in
       match%map Reader.really_read reader bytes with
       | `Eof _ -> raise_s [%message "Failed to read enough entropy"]
-      | `Ok -> Nocrypto.Rng.reseed (Cstruct.of_bytes bytes))
+      | `Ok -> Mirage_crypto_rng.reseed (Cstruct.of_bytes bytes))
 ;;

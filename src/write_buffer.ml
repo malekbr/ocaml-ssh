@@ -39,7 +39,7 @@ let mpint_str z =
     in
     let size = size + (-size % 8) in
     let size = size / 8 in
-    let cstruct = Nocrypto.Numeric.Z.to_cstruct_be ~size z in
+    let cstruct = Mirage_crypto_pk.Z_extra.to_cstruct_be ~size z in
     Cstruct.to_string cstruct
 ;;
 

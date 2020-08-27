@@ -5,7 +5,8 @@ module Kex_result = struct
     type t = Z.t
 
     let sexp_of_t t =
-      sexp_of_string (Nocrypto.Numeric.Z.to_cstruct_be t |> Cstruct.to_string)
+      sexp_of_string
+        (Mirage_crypto_pk.Z_extra.to_cstruct_be t |> Cstruct.to_string)
     ;;
   end
 
@@ -64,7 +65,7 @@ module Method = struct
   module Fixed_group_sha (M : sig
     val group_number : int
 
-    val group : Nocrypto.Dh.group
+    val group : Mirage_crypto_pk.Dh.group
 
     val sha_type : int
 
@@ -72,7 +73,7 @@ module Method = struct
   end) =
   struct
     type t = {
-        secret : Nocrypto.Dh.secret
+        secret : Mirage_crypto_pk.Dh.secret
       ; e : Z.t
       ; mutable sent : bool
       ; result : Negotation.compute_kex_result Set_once.t
@@ -83,8 +84,8 @@ module Method = struct
     let group = M.group
 
     let create () =
-      let secret, e = Nocrypto.Dh.gen_key group in
-      let e = Nocrypto.Numeric.Z.of_cstruct_be e in
+      let secret, e = Mirage_crypto_pk.Dh.gen_key group in
+      let e = Mirage_crypto_pk.Z_extra.of_cstruct_be e in
       { secret; e; sent = false; result = Set_once.create () }
     ;;
 
@@ -115,8 +116,9 @@ module Method = struct
       (* TODO malekbr: verify *)
       let hash_signature = Read_buffer.string read_buffer in
       let shared_key =
-        Nocrypto.Dh.shared group t.secret (Nocrypto.Numeric.Z.to_cstruct_be f)
-        |> Option.value_exn |> Nocrypto.Numeric.Z.of_cstruct_be
+        Mirage_crypto_pk.Dh.shared t.secret
+          (Mirage_crypto_pk.Z_extra.to_cstruct_be f)
+        |> Option.value_exn |> Mirage_crypto_pk.Z_extra.of_cstruct_be
       in
       Set_once.set_exn t.result [%here]
         (compute_shared_hash ~hash_signature ~e:t.e ~f ~shared_key
@@ -143,9 +145,9 @@ module Method = struct
 
     let sha_type = 1
 
-    let group = Nocrypto.Dh.Group.oakley_14
+    let group = Mirage_crypto_pk.Dh.Group.oakley_14
 
-    let hash_digest = Nocrypto.Hash.SHA1.digest
+    let hash_digest = Mirage_crypto.Hash.SHA1.digest
   end)
 
   module DH_G14_SHA256 = Fixed_group_sha (struct
@@ -153,9 +155,9 @@ module Method = struct
 
     let sha_type = 256
 
-    let group = Nocrypto.Dh.Group.oakley_14
+    let group = Mirage_crypto_pk.Dh.Group.oakley_14
 
-    let hash_digest = Nocrypto.Hash.SHA256.digest
+    let hash_digest = Mirage_crypto.Hash.SHA256.digest
   end)
 
   module DH_G16_SHA512 = Fixed_group_sha (struct
@@ -163,9 +165,9 @@ module Method = struct
 
     let sha_type = 512
 
-    let group = Nocrypto.Dh.Group.oakley_16
+    let group = Mirage_crypto_pk.Dh.Group.oakley_16
 
-    let hash_digest = Nocrypto.Hash.SHA512.digest
+    let hash_digest = Mirage_crypto.Hash.SHA512.digest
   end)
 
   module DH_G18_SHA512 = Fixed_group_sha (struct
@@ -173,9 +175,9 @@ module Method = struct
 
     let sha_type = 512
 
-    let group = Nocrypto.Dh.Group.oakley_18
+    let group = Mirage_crypto_pk.Dh.Group.oakley_18
 
-    let hash_digest = Nocrypto.Hash.SHA512.digest
+    let hash_digest = Mirage_crypto.Hash.SHA512.digest
   end)
 
   let diffie_hellman_group14_sha1 : t = T (module DH_G14_SHA1)

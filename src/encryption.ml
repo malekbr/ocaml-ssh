@@ -55,7 +55,7 @@ module Method = struct
   let key_size (T (module M)) = M.key_size
 
   module Aes128_ctr = struct
-    open! Nocrypto.Cipher_block.AES.CTR
+    open! Mirage_crypto.Cipher_block.AES.CTR
 
     module T = struct
       type t = { key : key; mutable ctr : ctr }
@@ -78,7 +78,7 @@ module Method = struct
 
     let encrypt (t : Encrypt.t) s =
       let result =
-        Nocrypto.Cipher_block.AES.CTR.encrypt ~key:t.key ~ctr:t.ctr
+        Mirage_crypto.Cipher_block.AES.CTR.encrypt ~key:t.key ~ctr:t.ctr
           (Cstruct.of_string s)
       in
       t.ctr <- next_ctr ~ctr:t.ctr result;
@@ -87,7 +87,7 @@ module Method = struct
 
     let decrypt (t : Decrypt.t) s =
       let result =
-        Nocrypto.Cipher_block.AES.CTR.decrypt ~key:t.key ~ctr:t.ctr
+        Mirage_crypto.Cipher_block.AES.CTR.decrypt ~key:t.key ~ctr:t.ctr
           (Cstruct.of_string s)
       in
       t.ctr <- next_ctr ~ctr:t.ctr result;
