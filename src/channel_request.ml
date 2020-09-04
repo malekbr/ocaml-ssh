@@ -60,8 +60,8 @@ let request_channel_session_create =
 ;;
 
 let handle_confirmation read_buffer =
-  let server_id = Read_buffer.uint32 read_buffer in
   let id = Read_buffer.uint32 read_buffer in
+  let server_id = Read_buffer.uint32 read_buffer in
   let server_window_size = Read_buffer.uint32 read_buffer in
   let server_max_packet_size = Read_buffer.uint32 read_buffer in
   (id, Confirmation.{ server_id; server_window_size; server_max_packet_size })
